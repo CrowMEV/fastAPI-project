@@ -1,0 +1,60 @@
+name: Test Backend and Deploy
+
+on:
+   [push]
+
+jobs:
+  checking:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_DB: ${{ secrets.DB_NAME }}
+          POSTGRES_USER: ${{ secrets.DB_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+      - name: Install dependencies
+        run: |
+          
+          pip install poetry && poetry install --no-interaction --no-ansi
+      - name: Linting with Pylint
+        run: poetry run pylint ./app
+      - name: Linting with Mypy
+        run: poetry run mypy ./app
+      - name: Test with pytest
+        run: |
+          poetry run pytest 
+        env:
+          POSTGRES_DB: ${{ secrets.DB_NAME }}
+          POSTGRES_USER: ${{ secrets.DB_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
+  deploy:
+    if: github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    needs: checking
+    steps:
+      - name: Connect and Deploy
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            cd ${{ secrets.SSH_PROJECT_FOLDER }}
+            git switch main
+            git pull
+            docker compose up --build --no-deps -d backend celery_worker celery_beat

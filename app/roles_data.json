@@ -1,0 +1,22 @@
+[
+  {
+    "name": "USER",
+    "pretty_name": "Пользователь"
+  },
+  {
+    "name": "SUPERUSER",
+    "pretty_name": "Директор"
+  },
+  {
+    "name": "ACCOUNTANT",
+    "pretty_name": "Бухгалтер"
+  },
+  {
+    "name": "ADMIN",
+    "pretty_name": "Администратор"
+  },
+  {
+    "name": "HR",
+    "pretty_name": "HR"
+  }
+]

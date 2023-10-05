@@ -1,0 +1,99 @@
+version: "3.9"
+
+services:
+  backend:
+    build: ./
+    container_name: backend
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ./app/static:/app/static
+      - ./app/files:/app/files
+      - ./app/:/app/
+    entrypoint: ["/bin/sh", "run.sh"]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.#.rule=Host(`api.#.ru`)"
+      - "traefik.http.routers.#.entrypoints=websecure"
+      - "traefik.http.routers.#.tls.certresolver=myresolver"
+      - "traefik.http.routers.#.service=#-service1"
+      - "traefik.http.services.#-service1.loadbalancer.server.port=8000"
+
+  postgresql:
+    image: postgres:15-alpine
+    container_name: postgresql
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - ./db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 3s
+
+  frontend:
+    build: ./#-front
+    container_name: frontend
+    depends_on:
+      - backend
+    restart: always
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.#.rule=Host(`#.ru`)"
+      - "traefik.http.routers.#.entrypoints=websecure"
+      - "traefik.http.routers.#.tls.certresolver=myresolver"
+      - "traefik.http.routers.#.service=#-service"
+      - "traefik.http.services.#-service.loadbalancer.server.port=3000"
+
+  traefik:
+    image: traefik:v3.0
+    container_name: traefik
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge=web"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge=true"
+      - "--certificatesresolvers.myresolver.acme.email=info@tgparisng.ru"
+    ports:
+      - 80:80
+      - 443:443
+    labels:
+      - "traefik.enable=true"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./letsencrypt:/letsencrypt
+      - ./traefik_config/:/etc/traefik
+
+  redis:
+    image: redis:6.0.20-alpine
+    container_name: redis
+
+  celery_worker:
+    build: ./
+    container_name: celery_worker
+    depends_on:
+      - redis
+    volumes:
+      - ./app:/app/
+    command: celery -A utils.celery.celery_app worker -l DEBUG
+    env_file:
+      - .env
+
+  celery_beat:
+    build: ./
+    container_name: celery_beat
+    depends_on:
+      - celery_worker
+    command: celery -A utils.celery.celery_app beat -l DEBUG
+    volumes:
+      - ./app/:/app/
+    env_file:
+      - .env
